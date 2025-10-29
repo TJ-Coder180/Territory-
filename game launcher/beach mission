@@ -1,0 +1,145 @@
+import pygame
+import sys
+import random
+
+# Initialize
+pygame.init()
+pygame.mixer.init()
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("WWII Beach Mission")
+clock = pygame.time.Clock()
+font = pygame.font.SysFont("consolas", 24)
+
+# Load sounds
+gunshot = pygame.mixer.Sound("gunshot.wav")
+shout = pygame.mixer.Sound("shout.wav")
+explosion = pygame.mixer.Sound("explosion.wav")
+
+# Colors
+beach_color = (194, 178, 128)
+enemy_color = (200, 0, 0)
+teammate_color = (0, 100, 200)
+bullet_color = (255, 0, 0)
+
+# Player
+player_x, player_y = WIDTH // 2, HEIGHT - 100
+speed = 5
+is_crouching = False
+is_prone = False
+shout_timer = 0
+bullets = []
+
+# AI teammates
+teammates = [{"x": random.randint(100, 700), "y": random.randint(400, 550), "shout": 0, "target": None} for _ in range(3)]
+
+# Enemies
+enemies = [{"x": random.randint(100, 700), "y": random.randint(100, 200), "alive": True} for _ in range(5)]
+
+# Explosions
+explosions = []
+
+# Objectives
+objective_text = "Reach the bunker and eliminate all enemies"
+
+def draw_hud():
+    label = font.render("Move: Arrows | Run: Shift | Crouch: C | Prone: Z | Shoot: Space | Shout: H", True, (0, 0, 0))
+    screen.blit(label, (20, 20))
+    obj = font.render(f"Objective: {objective_text}", True, (0, 0, 0))
+    screen.blit(obj, (20, 50))
+
+def draw_weapon():
+    pygame.draw.rect(screen, (80, 80, 80), (WIDTH - 100, HEIGHT - 60, 60, 10))  # Rifle barrel
+
+def draw_teammates():
+    for mate in teammates:
+        pygame.draw.rect(screen, teammate_color, (mate["x"], mate["y"], 20, 40))
+        if mate["shout"] > 0:
+            text = font.render("Cover me!", True, (255, 0, 0))
+            screen.blit(text, (mate["x"] - 10, mate["y"] - 30))
+            mate["shout"] -= 1
+        if random.random() < 0.005:
+            mate["shout"] = 60
+            shout.play()
+        # AI movement toward nearest enemy
+        if mate["target"] is None or not mate["target"]["alive"]:
+            living = [e for e in enemies if e["alive"]]
+            if living:
+                mate["target"] = random.choice(living)
+        if mate["target"] and mate["target"]["alive"]:
+            dx = mate["target"]["x"] - mate["x"]
+            dy = mate["target"]["y"] - mate["y"]
+            if abs(dx) > 5: mate["x"] += 1 if dx > 0 else -1
+            if abs(dy) > 5: mate["y"] += 1 if dy > 0 else -1
+
+def draw_enemies():
+    for enemy in enemies:
+        if enemy["alive"]:
+            pygame.draw.rect(screen, enemy_color, (enemy["x"], enemy["y"], 20, 40))
+
+def draw_explosions():
+    for ex in explosions:
+        pygame.draw.circle(screen, (255, 100, 0), (ex["x"], ex["y"]), ex["radius"])
+        ex["radius"] -= 1
+    explosions[:] = [e for e in explosions if e["radius"] > 0]
+
+def update_bullets():
+    for b in bullets:
+        b["x"] += 10
+        for enemy in enemies:
+            if enemy["alive"]:
+                rect = pygame.Rect(enemy["x"], enemy["y"], 20, 40)
+                if rect.collidepoint(b["x"], b["y"]):
+                    enemy["alive"] = False
+                    explosions.append({"x": enemy["x"] + 10, "y": enemy["y"] + 20, "radius": 20})
+                    explosion.play()
+    bullets[:] = [b for b in bullets if b["x"] < WIDTH]
+
+# Main loop
+while True:
+    screen.fill(beach_color)
+    keys = pygame.key.get_pressed()
+
+    # Movement
+    move_speed = speed * 2 if keys[pygame.K_LSHIFT] else speed
+    if keys[pygame.K_LEFT]: player_x -= move_speed
+    if keys[pygame.K_RIGHT]: player_x += move_speed
+    if keys[pygame.K_UP]: player_y -= move_speed
+    if keys[pygame.K_DOWN]: player_y += move_speed
+
+    # Posture
+    is_crouching = keys[pygame.K_c]
+    is_prone = keys[pygame.K_z] and not is_crouching
+
+    # Events
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                bullet_y = HEIGHT - 70
+                bullets.append({"x": WIDTH - 100, "y": bullet_y})
+                gunshot.play()
+            if event.key == pygame.K_h:
+                shout_timer = 60
+                shout.play()
+
+    # Shouting
+    if shout_timer > 0:
+        shout_text = font.render("HELP!", True, (255, 0, 0))
+        screen.blit(shout_text, (WIDTH // 2 - 30, HEIGHT - 150))
+        shout_timer -= 1
+
+    # Draw
+    draw_hud()
+    draw_weapon()
+    draw_teammates()
+    draw_enemies()
+    draw_explosions()
+    update_bullets()
+    for b in bullets:
+        pygame.draw.rect(screen, bullet_color, (b["x"], b["y"], 10, 4))
+
+    pygame.display.flip()
+    clock.tick(60)
