@@ -1,0 +1,174 @@
+import pygame
+import sys
+import random
+import math
+
+# Initialize
+pygame.init()
+pygame.mixer.init()
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("D-Day Landing Prep")
+clock = pygame.time.Clock()
+font = pygame.font.SysFont("consolas", 24)
+
+# Load sounds
+gunfire = pygame.mixer.Sound("gunfire.wav")
+plane = pygame.mixer.Sound("plane.wav")
+landing = pygame.mixer.Sound("landing.wav")
+gunfire.play(-1)
+plane.play(-1)
+
+# Character data
+character_name = "Hero"
+role = "Infantry"
+uniform_color = (100, 100, 255)
+
+# Squad setup
+roles = ["Infantry", "Medic", "Engineer"]
+squad = []
+for i in range(5):
+    squad.append({
+        "name": f"Soldier {i+1}",
+        "role": random.choice(roles),
+        "color": (random.randint(50, 200), random.randint(50, 200), random.randint(50, 200))
+    })
+
+# Colors
+boat_color = (60, 60, 60)
+water_color = (30, 144, 255)
+beach_color = (194, 178, 128)
+bunker_color = (100, 100, 100)
+flak_color = (255, 0, 0)
+
+# Animation variables
+wave_phase = 0
+rock_phase = 0
+plane_timer = 0
+
+# Entities
+planes = []
+explosions = []
+smoke_trails = []
+debris = []
+flak_tracers = []
+other_boats = [{"x": 100 + i * 150, "y": 180 + random.randint(-10, 10)} for i in range(1, 4)]
+defenses = [{"x": 150 + i * 200, "y": 120} for i in range(3)]
+
+# Transition
+transition_triggered = False
+transition_alpha = 0
+transition_surface = pygame.Surface((WIDTH, HEIGHT))
+transition_surface.fill((255, 255, 255))
+transition_surface.set_alpha(transition_alpha)
+
+def draw_waves(phase):
+    amplitude = 10
+    frequency = 0.02
+    for y in range(HEIGHT - 100, HEIGHT, 5):
+        points = []
+        for x in range(0, WIDTH, 10):
+            offset = amplitude * math.sin(frequency * x + phase + y * 0.1)
+            points.append((x, y + offset))
+        pygame.draw.lines(screen, water_color, False, points, 2)
+
+def draw_scene():
+    global wave_phase, rock_phase, transition_triggered, transition_alpha
+    screen.fill((0, 0, 0))
+    draw_waves(wave_phase)
+    wave_phase += 0.05
+    rock_phase += 0.03
+    rock_offset = int(5 * math.sin(rock_phase))
+
+    # Beach
+    pygame.draw.rect(screen, beach_color, (0, 100, WIDTH, 40))
+
+    # Enemy defenses
+    for defense in defenses:
+        pygame.draw.rect(screen, bunker_color, (defense["x"], defense["y"], 40, 20))
+        pygame.draw.rect(screen, (120, 120, 120), (defense["x"] - 10, defense["y"] + 20, 60, 10))
+
+    # Flak tracers
+    for tracer in flak_tracers:
+        pygame.draw.line(screen, flak_color, (tracer["x1"], tracer["y1"]), (tracer["x2"], tracer["y2"]), 2)
+
+    # Other boats
+    for boat in other_boats:
+        pygame.draw.rect(screen, (80, 80, 80), (boat["x"], boat["y"], 100, 40))
+        pygame.draw.rect(screen, (100, 100, 100), (boat["x"], boat["y"], 100, 10))
+
+    # Main boat
+    pygame.draw.rect(screen, boat_color, (100, 150 + rock_offset, 600, 300))
+    pygame.draw.rect(screen, (80, 80, 80), (100, 150 + rock_offset, 600, 20))
+
+    # Main character
+    pygame.draw.rect(screen, uniform_color, (150, 200 + rock_offset, 40, 80))
+    pygame.draw.rect(screen, (80, 80, 80), (180, 220 + rock_offset, 20, 5))  # Rifle
+    name_text = font.render(f"{character_name} ({role})", True, (255, 255, 255))
+    screen.blit(name_text, (140, 290 + rock_offset))
+
+    # Squad
+    for i, soldier in enumerate(squad):
+        x = 220 + i * 100
+        pygame.draw.rect(screen, soldier["color"], (x, 200 + rock_offset, 40, 80))
+        pygame.draw.rect(screen, (80, 80, 80), (x + 30, 220 + rock_offset, 20, 5))  # Rifle
+        label = font.render(f"{soldier['name']} ({soldier['role']})", True, (255, 255, 255))
+        screen.blit(label, (x - 20, 290 + rock_offset))
+        if random.random() < 0.01:
+            shout = random.choice(["Go!", "Get ready!", "Incoming!", "Hold tight!", "For freedom!"])
+            shout_text = font.render(shout, True, (255, 0, 0))
+            screen.blit(shout_text, (x - 10, 180 + rock_offset))
+
+    # Title
+    title = font.render("D-Day Landing Prep", True, (255, 255, 255))
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
+
+    # Planes
+    for plane in planes:
+        color = (200, 200, 200) if not plane["hit"] else (255, 0, 0)
+        pygame.draw.polygon(screen, color, [
+            (plane["x"], plane["y"]),
+            (plane["x"] + 40, plane["y"] + 5),
+            (plane["x"], plane["y"] + 10)
+        ])
+
+    # Smoke trails
+    for trail in smoke_trails:
+        pygame.draw.circle(screen, (100, 100, 100), (int(trail["x"]), int(trail["y"])), trail["size"])
+
+    # Debris
+    for piece in debris:
+        pygame.draw.rect(screen, (150, 150, 150), (piece["x"], piece["y"], 4, 4))
+
+    # Explosions
+    for explosion in explosions:
+        pygame.draw.circle(screen, (255, 100, 0), (int(explosion["x"]), int(explosion["y"])), 15)
+
+    # Transition
+    if not transition_triggered and rock_offset > 45:
+        transition_triggered = True
+        landing.play()
+
+    if transition_triggered:
+        transition_alpha = min(255, transition_alpha + 5)
+        transition_surface.set_alpha(transition_alpha)
+        screen.blit(transition_surface, (0, 0))
+        if transition_alpha > 100:
+            msg = font.render("Prepare to land!", True, (0, 0, 0))
+            screen.blit(msg, (WIDTH//2 - msg.get_width()//2, HEIGHT//2))
+        if transition_alpha >= 255:
+            beach_mission()
+
+def beach_mission():
+    player_x, player_y = WIDTH//2, HEIGHT - 100
+    speed = 5
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT]: player_x -= speed
+        if keys[pygame.K_RIGHT]: player_x += speed
+        if keys[pygame.K_UP]: player_y -= speed
+        if keys[pygame.K_DOWN]: player_y += speed
